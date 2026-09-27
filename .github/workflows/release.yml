@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux (musl static binaries)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-x86_64
+            binary_name: m3u8-to-http-proxy-linux-x86_64
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-arm64
+            binary_name: m3u8-to-http-proxy-linux-arm64
+
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+            name: linux-armv7
+            binary_name: m3u8-to-http-proxy-linux-armv7
+
+          # macOS (Apple Silicon & Intel)
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: macos-arm64
+            binary_name: m3u8-to-http-proxy-macos-arm64
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: macos-x86_64
+            binary_name: m3u8-to-http-proxy-macos-x86_64
+
+          # Windows (x64 & ARM64)
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: windows-x86_64
+            binary_name: m3u8-to-http-proxy-windows-x86_64.exe
+
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: windows-arm64
+            binary_name: m3u8-to-http-proxy-windows-arm64.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Binary
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: m3u8-to-http-proxy
+          target: ${{ matrix.target }}
+          archive: $bin-$target
+          tar: unix
+          zip: windows
+          dry-run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Clean Raw Binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          tar -xzf m3u8-to-http-proxy-${{ matrix.target }}.tar.gz
+          mv m3u8-to-http-proxy ${{ matrix.binary_name }}
+          chmod +x ${{ matrix.binary_name }}
+          rm -f *.tar.gz *.sha256
+
+      - name: Extract Clean Raw Binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path m3u8-to-http-proxy-${{ matrix.target }}.zip -DestinationPath temp_extract
+          Move-Item temp_extract/m3u8-to-http-proxy.exe ${{ matrix.binary_name }}
+          Remove-Item temp_extract -Recurse -Force
+          Remove-Item *.zip -Force
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.name }}
+          path: ${{ matrix.binary_name }}
+          if-no-files-found: error
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: Generate Changelog
+        run: |
+          cat << 'EOF' > release_notes.md
+          ### Overview
+          Lightweight HTTP audio proxy written in Rust that converts live HLS (`.m3u8`) streams into continuous, chunked HTTP audio streams (`audio/aac` or `audio/mpeg`) for media players and Discord audio nodes (NodeLink / Lavalink).
+
+          ### Key Features
+          - **Key-Value Station Routing**: Dynamic station mapping configured via `config.toml`, accessible at `/radio/:key` or `/stream/:key`.
+          - **Zero Re-encoding**: Direct pass-through of raw audio frames with sub-millisecond overhead and ~10 MB RAM footprint.
+          - **Automatic Lifecycle Management**: Background segment polling runs only while clients are actively connected, stopping immediately upon disconnect.
+          - **Standalone Binaries**: Multi-platform executables with no external runtime dependencies.
+
+          ### Changes in this Release
+          EOF
+          git log --format="* %h - %s (%ad)" --date=short >> release_notes.md
+
+      - name: Create Release & Publish Clean Executables
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: binaries/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
