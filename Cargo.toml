@@ -1,0 +1,20 @@
+[package]
+name = "m3u8-to-http-proxy"
+version = "1.0.0"
+edition = "2021"
+authors = ["Muthu <z@mokjr.lol>"]
+description = "Lightweight high-performance HTTP proxy that streams live HLS (M3U8) audio as continuous chunked AAC/MP3"
+license = "MIT"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+async-stream = "0.3"
+futures-util = "0.3"
+bytes = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

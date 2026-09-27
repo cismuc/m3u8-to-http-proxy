@@ -1,0 +1,6 @@
+[server]
+host = "0.0.0.0"
+port = 3050
+
+[stations]
+kadak = "https://admn-radio-cdn-lb.starzplayarabia.com/out/v1/admn_radio_enc/kadak/kadak_hls_nd/index_kadakfm_audio_enc_ara.m3u8"
